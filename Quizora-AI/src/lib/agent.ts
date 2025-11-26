@@ -1,8 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-
-// Configure PDF.js worker for Node.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+import pdf from 'pdf-parse';
 
 export class StudyAgent {
   private model: any;
@@ -25,22 +22,8 @@ export class StudyAgent {
 
   async extractTextFromPdf(buffer: Buffer): Promise<string> {
     try {
-      const uint8Array = new Uint8Array(buffer);
-      const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
-      const pdf = await loadingTask.promise;
-      
-      let fullText = '';
-      
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items
-          .map((item: any) => item.str)
-          .join(' ');
-        fullText += pageText + '\n';
-      }
-      
-      return fullText;
+      const data = await pdf(buffer);
+      return data.text;
     } catch (e: any) {
       throw new Error(`Error reading PDF: ${e.message}`);
     }
