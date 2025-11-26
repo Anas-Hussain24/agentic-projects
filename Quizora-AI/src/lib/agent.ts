@@ -16,8 +16,45 @@ export class StudyAgent {
       throw new Error("GEMINI_API_KEY not found in environment variables");
     }
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Using the same model as in the Python version
-    this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite-preview-02-05' });
+    // Using stable model with better rate limits
+    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  }
+
+  /**
+   * Retry helper with exponential backoff for rate limit errors
+   */
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    initialDelay: number = 1000
+  ): Promise<T> {
+    let lastError: any;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+        
+        // Check if it's a rate limit error (429)
+        const isRateLimit = error.status === 429 || 
+                           error.message?.includes('429') ||
+                           error.message?.includes('Resource exhausted');
+        
+        if (!isRateLimit || attempt === maxRetries - 1) {
+          // If not a rate limit error or last attempt, throw immediately
+          throw error;
+        }
+        
+        // Calculate delay with exponential backoff
+        const delay = initialDelay * Math.pow(2, attempt);
+        console.log(`Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw lastError;
   }
 
   async extractTextFromPdf(buffer: Buffer): Promise<string> {
@@ -40,9 +77,22 @@ export class StudyAgent {
     Summary:
     `;
 
-    const result = await this.model.generateContent(prompt);
-    const response = await result.response;
-    return response.text();
+    try {
+      return await this.retryWithBackoff(async () => {
+        const result = await this.model.generateContent(prompt);
+        const response = await result.response;
+        return response.text();
+      });
+    } catch (error: any) {
+      const isRateLimit = error.status === 429 || 
+                         error.message?.includes('429') ||
+                         error.message?.includes('Resource exhausted');
+      
+      if (isRateLimit) {
+        throw new Error('API rate limit exceeded. Please try again in a few moments.');
+      }
+      throw new Error(`Failed to generate summary: ${error.message}`);
+    }
   }
 
   async generateQuiz(text: string, numQuestions: number = 5): Promise<any[]> {
@@ -63,26 +113,39 @@ export class StudyAgent {
     JSON:
     `;
 
-    const result = await this.model.generateContent(prompt);
-    const response = await result.response;
-    let textResponse = response.text().trim();
-
-    // Clean up potential markdown formatting
-    if (textResponse.startsWith("```json")) {
-      textResponse = textResponse.slice(7);
-    }
-    if (textResponse.startsWith("```")) {
-      textResponse = textResponse.slice(3);
-    }
-    if (textResponse.endsWith("```")) {
-      textResponse = textResponse.slice(0, -3);
-    }
-
     try {
-      return JSON.parse(textResponse);
-    } catch (e) {
-      console.error("Failed to parse quiz JSON", textResponse);
-      return [{ question: "Error parsing quiz", options: [], answer: "" }];
+      return await this.retryWithBackoff(async () => {
+        const result = await this.model.generateContent(prompt);
+        const response = await result.response;
+        let textResponse = response.text().trim();
+
+        // Clean up potential markdown formatting
+        if (textResponse.startsWith("```json")) {
+          textResponse = textResponse.slice(7);
+        }
+        if (textResponse.startsWith("```")) {
+          textResponse = textResponse.slice(3);
+        }
+        if (textResponse.endsWith("```")) {
+          textResponse = textResponse.slice(0, -3);
+        }
+
+        try {
+          return JSON.parse(textResponse);
+        } catch (e) {
+          console.error("Failed to parse quiz JSON", textResponse);
+          return [{ question: "Error parsing quiz", options: [], answer: "" }];
+        }
+      });
+    } catch (error: any) {
+      const isRateLimit = error.status === 429 || 
+                         error.message?.includes('429') ||
+                         error.message?.includes('Resource exhausted');
+      
+      if (isRateLimit) {
+        throw new Error('API rate limit exceeded. Please try again in a few moments.');
+      }
+      throw new Error(`Failed to generate quiz: ${error.message}`);
     }
   }
 }

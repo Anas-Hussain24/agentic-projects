@@ -34,6 +34,24 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('API Error:', error);
-    return NextResponse.json({ success: false, error: 'Internal server error', details: error.message }, { status: 500 });
+    
+    // Check if it's a rate limit error
+    const isRateLimit = error.message?.includes('rate limit') || 
+                       error.message?.includes('429') ||
+                       error.message?.includes('Resource exhausted');
+    
+    if (isRateLimit) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'API rate limit exceeded. Please wait a moment and try again.',
+        details: error.message 
+      }, { status: 429 });
+    }
+    
+    return NextResponse.json({ 
+      success: false, 
+      error: 'An error occurred while processing the file. Please try again.',
+      details: error.message 
+    }, { status: 500 });
   }
 }
