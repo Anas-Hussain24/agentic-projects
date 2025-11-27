@@ -21,12 +21,12 @@ export class StudyAgent {
   }
 
   /**
-   * Retry helper with exponential backoff for rate limit errors
+   * Retry helper with exponential backoff for retryable errors (429, 503)
    */
   private async retryWithBackoff<T>(
     fn: () => Promise<T>,
-    maxRetries: number = 3,
-    initialDelay: number = 1000
+    maxRetries: number = 5,
+    initialDelay: number = 2000
   ): Promise<T> {
     let lastError: any;
     
@@ -36,19 +36,24 @@ export class StudyAgent {
       } catch (error: any) {
         lastError = error;
         
-        // Check if it's a rate limit error (429)
-        const isRateLimit = error.status === 429 || 
+        // Check if it's a retryable error (429 rate limit or 503 service unavailable)
+        const isRetryable = error.status === 429 || 
+                           error.status === 503 ||
                            error.message?.includes('429') ||
-                           error.message?.includes('Resource exhausted');
+                           error.message?.includes('503') ||
+                           error.message?.includes('Resource exhausted') ||
+                           error.message?.includes('overloaded') ||
+                           error.message?.includes('Service Unavailable');
         
-        if (!isRateLimit || attempt === maxRetries - 1) {
-          // If not a rate limit error or last attempt, throw immediately
+        if (!isRetryable || attempt === maxRetries - 1) {
+          // If not a retryable error or last attempt, throw immediately
           throw error;
         }
         
         // Calculate delay with exponential backoff
         const delay = initialDelay * Math.pow(2, attempt);
-        console.log(`Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+        const errorType = error.status === 503 ? 'Service overloaded' : 'Rate limit hit';
+        console.log(`${errorType}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
         
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -88,8 +93,16 @@ export class StudyAgent {
                          error.message?.includes('429') ||
                          error.message?.includes('Resource exhausted');
       
+      const isOverloaded = error.status === 503 ||
+                          error.message?.includes('503') ||
+                          error.message?.includes('overloaded');
+      
       if (isRateLimit) {
         throw new Error('API rate limit exceeded. Please try again in a few moments.');
+      }
+      
+      if (isOverloaded) {
+        throw new Error('Gemini API is currently overloaded. Please try again in a moment.');
       }
       throw new Error(`Failed to generate summary: ${error.message}`);
     }
@@ -142,8 +155,16 @@ export class StudyAgent {
                          error.message?.includes('429') ||
                          error.message?.includes('Resource exhausted');
       
+      const isOverloaded = error.status === 503 ||
+                          error.message?.includes('503') ||
+                          error.message?.includes('overloaded');
+      
       if (isRateLimit) {
         throw new Error('API rate limit exceeded. Please try again in a few moments.');
+      }
+      
+      if (isOverloaded) {
+        throw new Error('Gemini API is currently overloaded. Please try again in a moment.');
       }
       throw new Error(`Failed to generate quiz: ${error.message}`);
     }
