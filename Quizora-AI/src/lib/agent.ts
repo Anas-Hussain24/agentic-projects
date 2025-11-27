@@ -17,7 +17,7 @@ export class StudyAgent {
     }
     const genAI = new GoogleGenerativeAI(apiKey);
     // Using stable model with better rate limits
-    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
   }
 
   /**
