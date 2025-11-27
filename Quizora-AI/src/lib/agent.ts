@@ -16,8 +16,8 @@ export class StudyAgent {
       throw new Error("GEMINI_API_KEY not found in environment variables");
     }
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Using stable model with better rate limits
-    this.model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+    // Using the official stable alias that works across all API key tiers
+    this.model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
   }
 
   /**
